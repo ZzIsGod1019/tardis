@@ -1254,7 +1254,9 @@ where
         if let ast::Statement::Query(query) = ast {
             if let SetExpr::Select(select) = query.body.as_ref() {
                 if let TableFactor::Table { name, .. } = &select.from[0].relation {
-                    table_name.clone_from(&name.0[0].value);
+                    if let Some(ident) = name.0[0].as_ident() {
+                        table_name.clone_from(&ident.value);
+                    }
                 }
             }
         }
