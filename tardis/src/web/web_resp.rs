@@ -3,6 +3,7 @@ use crate::basic::result::{TARDIS_RESULT_ACCEPTED_CODE, TARDIS_RESULT_SUCCESS_CO
 use crate::serde::{Deserialize, Serialize};
 use crate::TardisFuns;
 use poem::http::StatusCode;
+use poem::Response;
 use poem_openapi::payload::Json;
 use poem_openapi::{
     types::{ParseFromJSON, ToJSON},
@@ -10,11 +11,12 @@ use poem_openapi::{
 };
 
 const TARDIS_ERROR_FLAG: &str = "__TARDIS_ERROR__";
-
+pub const HEADER_X_TARDIS_ERROR: &str = "x-tardis-error";
 pub type TardisApiResult<T> = poem::Result<Json<TardisResp<T>>>;
 
 impl From<TardisError> for poem::Error {
     fn from(error: TardisError) -> Self {
+        // If there's a better way, we may parse the status code from error.code[0..3] while its length is enough.
         let status_code = match &error.code {
             c if c.starts_with("400") => StatusCode::BAD_REQUEST,
             c if c.starts_with("401") => StatusCode::UNAUTHORIZED,
@@ -55,17 +57,18 @@ impl From<TardisError> for poem::Error {
             c if c.starts_with("511") => StatusCode::NETWORK_AUTHENTICATION_REQUIRED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        poem::Error::from_string(
-            format!("{}{}", TARDIS_ERROR_FLAG, TardisFuns::json.obj_to_string(&error).unwrap_or_else(|_| String::new())),
-            status_code,
-        )
+        let response = Response::builder().header(HEADER_X_TARDIS_ERROR, &error.code).status(status_code).body(format!(
+            "{}{}",
+            TARDIS_ERROR_FLAG,
+            TardisFuns::json.obj_to_string(&error).unwrap_or_else(|_| String::new())
+        ));
+        poem::Error::from_response(response)
     }
 }
 
 pub fn mapping_http_code_to_error(http_code: StatusCode, msg: &str) -> Option<TardisError> {
-    if msg.starts_with(TARDIS_ERROR_FLAG) {
-        let msg = msg.split_at(TARDIS_ERROR_FLAG.len()).1.to_string();
-        let error = TardisFuns::json.str_to_obj(&msg).unwrap_or_else(|_| TardisError::format_error("[Tardis.WebServer] Invalid format error", "406-tardis-error-invalid"));
+    if let Some(tardis_error) = msg.strip_prefix(TARDIS_ERROR_FLAG) {
+        let error = TardisFuns::json.str_to_obj(tardis_error).unwrap_or_else(|_| TardisError::format_error("[Tardis.WebServer] Invalid format error", "406-tardis-error-invalid"));
         return Some(error);
     }
     match http_code {

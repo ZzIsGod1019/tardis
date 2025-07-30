@@ -317,10 +317,10 @@ impl TardisWebServer {
             Cors::new().allow_origin(&self.config.allowed_origin)
         };
         let route = route.boxed();
-        let route = route.with(middleware);
+        let route = route.with(middleware).with(poem::middleware::Tracing).with(poem::middleware::CatchPanic::default());
         #[cfg(feature = "tracing")]
         let route = {
-            let tracer = opentelemetry::global::tracer("");
+            let tracer = opentelemetry::global::tracer(crate::basic::tracing::tracing_service_name());
             route.with(poem::middleware::OpenTelemetryTracing::new(tracer))
         };
         if module_options.uniform_error || module_config.uniform_error {
